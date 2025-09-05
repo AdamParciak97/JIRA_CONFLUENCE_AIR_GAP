@@ -4,7 +4,7 @@
 
 | Machine | Jira | Confluence | Postgres | PROXY|
 | --------------- | --------------- | --------------- |--------------- |--------------- |
-| CPU | 16vCPU | 16vCPU2 | 8vCPU | 4vCPU|
+| CPU | 16vCPU | 16vCPU | 8vCPU | 4vCPU|
 | RAM | 32GB | 32GB | 24GB | 8BG |
 | DISK | 300GB | 300GB | 300GB | 100 GB|
 | JAVA | OpenJDK11 | OpenJDK11 |  |  |
