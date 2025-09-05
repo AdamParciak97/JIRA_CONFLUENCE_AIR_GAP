@@ -17,6 +17,12 @@
 ### 192.168.10.57 - Proxy.
 
 ## Download jira.bin, confluence.bin and OpenJDK17U-jdk_x64_linux_hotspot_17.0.8.1_1.tar.gz
+
+```bash
+https://repo.schoolsoft.com.tw/repo/jdk/OpenJDK17U-jdk_x64_linux_hotspot_17.0.8.1_1.tar.gz
+https://www.atlassian.com/software/confluence/downloads/binary/atlassian-confluence-10.0-x64.bin
+https://www.atlassian.com/software/jira/downloads/binary/atlassian-jira-software-9.11.3-x64.bin
+```
 ## Rpm for postgres is on this project
 
 ## Create machine on Vsphere
