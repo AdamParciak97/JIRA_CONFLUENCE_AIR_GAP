@@ -13,7 +13,8 @@
 ## Adressing. To ensure proper addressing of automation device addresses, please use the following key:
 ### 192.168.10.180 – Jira;
 ### 192.168.10.181 – Confluence;
-### 192.168.10.182 – Postgres.
+### 192.168.10.182 – Postgres;
+### 192.168.10.57 - Proxy.
 
 ## Download jira.bin, confluence.bin and OpenJDK17U-jdk_x64_linux_hotspot_17.0.8.1_1.tar.gz
 ## Rpm for postgres is on this project
