@@ -2,13 +2,13 @@
 
 ## Architecture:
 
-| Machine | Jira | Confluence | Postgres |
-| --------------- | --------------- | --------------- |--------------- |
-| CPU | 16vCPU | 16vCPU2 | 8vCPU |
-| RAM | 32GB | 32GB | 24GB3 |
-| DISK | 300GB | 300GB | 300GB |
-| JAVA | OpenJDK11 | OpenJDK11 |  |
-| System | Oracle Linux 8.10 | Oracle Linux 8.10 | Oracle Linux 8.10 |
+| Machine | Jira | Confluence | Postgres | PROXY|
+| --------------- | --------------- | --------------- |--------------- |--------------- |
+| CPU | 16vCPU | 16vCPU2 | 8vCPU | 4vCPU|
+| RAM | 32GB | 32GB | 24GB | 8BG |
+| DISK | 300GB | 300GB | 300GB | 100 GB|
+| JAVA | OpenJDK11 | OpenJDK11 |  |  |
+| System | Oracle Linux 8.10 | Oracle Linux 8.10 | Oracle Linux 8.10 | Oracle Linux 8.10 |
 
 ## Adressing. To ensure proper addressing of automation device addresses, please use the following key:
 ### 192.168.10.180 – Jira;
@@ -165,3 +165,252 @@ chmod +x atlassian-jira-software-*-x64.bin
 <img width="980" height="309" alt="image" src="https://github.com/user-attachments/assets/cd6bc2ed-69fc-41a5-991f-f305df483e0e" />
 
 # Confluence
+## Copy file confluence.bin to machine to directory /home/super_admin. Then we give it execute permissions and run the file.
+```bash
+cd /home/super_admin
+chmod +x atlassian-confluence-*-x64.bin
+./atlassian-confluence-*-x64.bin
+```
+## During installation, select the Custom installation option. Once installed, go to your browser and enter http://192.168.10.181:8090
+### Selecet Production Installation
+<img width="755" height="510" alt="image" src="https://github.com/user-attachments/assets/5e82c240-6664-467b-ad49-66e4488471d8" />
+
+### Import licence
+<img width="546" height="412" alt="image" src="https://github.com/user-attachments/assets/e9558f88-8796-4bf0-aa06-8070568cf5cc" />
+
+### Configure connection do database postgres
+<img width="654" height="516" alt="image" src="https://github.com/user-attachments/assets/87eb98ca-ddd3-42d8-b044-4a42a59b5724" />
+
+### Last steps
+<img width="726" height="527" alt="image" src="https://github.com/user-attachments/assets/93682737-1c7f-468e-8aa7-cfa2d849290b" />
+
+<img width="640" height="365" alt="image" src="https://github.com/user-attachments/assets/36e02bc1-59a8-4f22-aced-dbea3f65888a" />
+
+<img width="599" height="188" alt="image" src="https://github.com/user-attachments/assets/61594cf5-3d08-4b3a-a40f-f2fd359ff5a7" />
+
+
+# PROXY
+### Install Oracle Linux 8 on machine from ISO file
+### Download docker image nginx on docker desktop
+### Create directory in opt
+```bash
+sudo mkdir -p /opt/nginx-proxy/{certs,logs}
+cd /opt/nginx-proxy/certs
+```
+### Create CA
+```bash
+openssl genrsa -out labCA.key 4096
+
+openssl req -x509 -new -nodes -key labCA.key -sha256 -days 3650 \
+  -subj "/C=PL/O=Lab/CN=Lab Root CA" -out labCA.crt
+```
+
+### Create file SAN
+```bash
+cat > san.cnf <<'EOF'
+[ req ]
+default_bits       = 2048
+prompt             = no
+default_md         = sha256
+distinguished_name = dn
+req_extensions     = v3_req
+
+[ dn ]
+C = PL
+O = Lab
+CN = 192.168.10.57
+
+[ v3_req ]
+keyUsage = critical, digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
+
+[ alt_names ]
+IP.1 = 192.168.10.57
+EOF
+```
+
+### Create key and CSR for proxy
+```bash
+openssl genrsa -out proxy.key 2048
+openssl req -new -key proxy.key -out proxy.csr -config san.cnf
+```
+
+### Sign CSR
+```bash
+openssl x509 -req -in proxy.csr -CA labCA.crt -CAkey labCA.key -CAcreateserial \ -out proxy.crt -days 825 -sha256 -extensions v3_req -extfile san.cnf
+```
+
+### Create docker-compose.yml
+```bash
+version: "3.8"
+
+services:
+  nginx:
+    image: nginx:stable-perl
+    container_name: ngnix-reverse-proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+      - ./logs:/var/log/nginx
+```
+
+### Create nginx.conf
+```bash
+user  nginx;
+worker_processes auto;
+
+events { worker_connections 4096; }
+
+http {
+  include       /etc/nginx/mime.types;
+  default_type  application/octet-stream;
+
+  log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                  '$status $body_bytes_sent "$http_referer" '
+                  '"$http_user_agent" "$http_x_forwarded_for"';
+  access_log /var/log/nginx/access.log main;
+  error_log  /var/log/nginx/error.log warn;
+
+  map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+  }
+
+  upstream jira_upstream {
+    server 192.168.10.180:8080;
+    keepalive 64;
+  }
+
+  upstream confluence_upstream {
+    server 192.168.10.181:8090;
+    keepalive 64;
+  }
+
+  # --- HTTP -> HTTPS ---
+  server {
+    listen 80;
+    return 301 https://$host$request_uri;
+  }
+
+  # --- HTTPS terminacja ---
+  server {
+    listen 443 ssl http2;
+    server_name _;
+
+    ssl_certificate     /etc/nginx/certs/proxy.crt;
+    ssl_certificate_key /etc/nginx/certs/proxy.key;
+    # opcjonalnie, jeśli chcesz pokazać łańcuch/zaufanie:
+    # ssl_trusted_certificate /etc/nginx/certs/labCA.crt;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+
+    client_max_body_size 200m;
+
+    # --- JIRA ---
+    location = /jira {
+      return 301 /jira/;
+    }
+    location ^~ /jira/ {
+      proxy_pass http://jira_upstream;
+      proxy_http_version 1.1;
+      proxy_read_timeout 300;
+      proxy_connect_timeout 60;
+      proxy_send_timeout 60;
+
+      proxy_set_header Host              $host;
+      proxy_set_header X-Real-IP         $remote_addr;
+      proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Host  $host;
+      proxy_set_header X-Forwarded-Port  443;
+      proxy_set_header X-Forwarded-Proto https;
+
+      proxy_redirect off;
+    }
+
+    # --- CONFLUENCE ---
+    location = /confluence {
+      return 301 /confluence/;
+    }
+    location ^~ /confluence/ {
+      proxy_pass http://confluence_upstream;
+      proxy_http_version 1.1;
+      proxy_read_timeout 300;
+      proxy_connect_timeout 60;
+      proxy_send_timeout 60;
+
+      proxy_set_header Host              $host;
+      proxy_set_header X-Real-IP         $remote_addr;
+      proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Host  $host;
+      proxy_set_header X-Forwarded-Port  443;
+      proxy_set_header X-Forwarded-Proto https;
+
+      proxy_set_header Upgrade           $http_upgrade;
+      proxy_set_header Connection        $connection_upgrade;
+
+      proxy_redirect off;
+    }
+  }
+}
+```
+
+### Run docker compose
+```bash
+cd /opt/nginx-proxy
+docker compose up -d
+docker logs -f ngnix-reverse-proxy
+```
+
+### Modify file "server.xml" on jira and confluence
+
+## Jira
+
+```bash
+nano /opt/atlassian/jira/conf/server.xml
+```
+
+```bash
+<Connector port="8080"
+           protocol="org.apache.coyote.http11.Http11NioProtocol"
+           proxyName="192.168.10.57"
+           proxyPort="443"
+           scheme="https"
+           secure="true"
+           URIEncoding="UTF-8" />
+
+<Context path="/jira" docBase="${catalina.home}/atlassian-jira" reloadable="false" useHttpOnly="true"/>
+```
+
+## Confluence
+
+```bash
+nano /opt/atlassian/confluence/conf/server.xml
+```
+
+```bash
+<Connector port="8090"
+           protocol="org.apache.coyote.http11.Http11NioProtocol"
+           proxyName="192.168.10.57"
+           proxyPort="443"
+           scheme="https"
+           secure="true"
+           URIEncoding="UTF-8" />
+
+<Context path="/confluence" docBase="../confluence" debug="0" reloadable="false"/>
+```
+
+### Restart service Jira and Confluence
+```bash
+sudo service jira stop && sudo service jira start
+sudo service confluence stop && sudo service confluence start
+```
+### Change on GUI baseURL
+<img width="1150" height="431" alt="image" src="https://github.com/user-attachments/assets/69cf9db8-b271-4541-98c5-195ff22b1d3f" />
+
+<img width="1379" height="363" alt="image" src="https://github.com/user-attachments/assets/3cfc17a4-4f79-4ea9-b37c-f465165f8d2d" />
