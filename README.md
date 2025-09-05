@@ -1,4 +1,4 @@
-# JIRA_CONFLUENCE_AIR_GAP
+# JIRA and CONFLUENCE on AIR-GAP
 
 ## Architecture:
 
