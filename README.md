@@ -469,15 +469,57 @@ nano /opt/atlassian/confluence/conf/server.xml
 ```
 
 ```bash
-<Connector port="8090"
-           protocol="org.apache.coyote.http11.Http11NioProtocol"
-           proxyName="192.168.10.57"
-           proxyPort="443"
-           scheme="https"
-           secure="true"
-           URIEncoding="UTF-8" />
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+   Apache Tomcat server configuration for Atlassian Confluence
+-->
 
-<Context path="/confluence" docBase="../confluence" debug="0" reloadable="false"/>
+<Server port="8000" shutdown="SHUTDOWN">
+    <Listener className="org.apache.catalina.startup.VersionLoggerListener"/>
+    <Listener className="org.apache.catalina.core.JreMemoryLeakPreventionListener"/>
+    <Listener className="org.apache.catalina.mbeans.GlobalResourcesLifecycleListener"/>
+    <Listener className="org.apache.catalina.core.ThreadLocalLeakPreventionListener"/>
+
+    <Service name="Catalina">
+
+        <!-- 
+        Connector — działa na porcie 8090, ale dla świata wystawia się jako https://192.168.10.57/confluence
+        -->
+        <Connector port="8090" 
+                   protocol="HTTP/1.1"
+                   connectionTimeout="20000"
+                   redirectPort="8443"
+                   maxHttpHeaderSize="8192"
+                   proxyName="192.168.10.57"
+                   proxyPort="443"
+                   scheme="https"
+                   secure="true"
+                   URIEncoding="UTF-8"/>
+
+        <!-- 
+        AJP connector — nieużywany, można zakomentować
+        -->
+        <!--
+        <Connector port="8009" 
+                   protocol="AJP/1.3" 
+                   enableLookups="false" 
+                   redirectPort="8443" 
+                   URIEncoding="UTF-8"/>
+        -->
+
+        <Engine name="Catalina" defaultHost="localhost">
+            <Host name="localhost" appBase="webapps" unpackWARs="true" autoDeploy="true">
+                
+                <!-- Context path ustawiony na /confluence -->
+                <Context path="/confluence" docBase="${catalina.home}/confluence" reloadable="false" useHttpOnly="true">
+                    <Manager pathname=""/>
+                    <JarScanner scanManifest="false"/>
+                </Context>
+
+            </Host>
+        </Engine>
+    </Service>
+</Server>
 ```
 
 ### Restart service Jira and Confluence
