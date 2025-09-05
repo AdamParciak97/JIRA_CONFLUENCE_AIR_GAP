@@ -282,11 +282,11 @@ http {
     ''      close;
   }
 
+  # --- Backendy ---
   upstream jira_upstream {
     server 192.168.10.180:8080;
     keepalive 64;
   }
-
   upstream confluence_upstream {
     server 192.168.10.181:8090;
     keepalive 64;
@@ -298,27 +298,38 @@ http {
     return 301 https://$host$request_uri;
   }
 
-  # --- HTTPS terminacja ---
+  # --- HTTPS (proxy 192.168.10.57) ---
   server {
     listen 443 ssl http2;
     server_name _;
 
     ssl_certificate     /etc/nginx/certs/proxy.crt;
     ssl_certificate_key /etc/nginx/certs/proxy.key;
-    # opcjonalnie, jeśli chcesz pokazać łańcuch/zaufanie:
     # ssl_trusted_certificate /etc/nginx/certs/labCA.crt;
 
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers on;
-
     client_max_body_size 200m;
 
-    # --- JIRA ---
-    location = /jira {
+    # --- ROOT -> /jira/ (tylko strona główna) ---
+    location = / {
       return 301 /jira/;
     }
+
+    # --- /login.jsp -> wewnętrznie do /jira/login.jsp (BEZ 301!) ---
+    location = /login.jsp {
+      rewrite ^ /jira/login.jsp last;
+    }
+
+    # ========================
+    #         JIRA
+    # ========================
+    location = /jira { return 301 /jira/; }
+
     location ^~ /jira/ {
+      # Jira ma contextPath=/jira → wysyłamy dokładnie /jira/... do backendu
       proxy_pass http://jira_upstream;
+
       proxy_http_version 1.1;
       proxy_read_timeout 300;
       proxy_connect_timeout 60;
@@ -331,15 +342,19 @@ http {
       proxy_set_header X-Forwarded-Port  443;
       proxy_set_header X-Forwarded-Proto https;
 
+      # Jeśli Jira da 'Location: /coś', dodaj prefiks /jira (nie dotyka query stringów)
       proxy_redirect off;
     }
 
-    # --- CONFLUENCE ---
-    location = /confluence {
-      return 301 /confluence/;
-    }
+    # ========================
+    #      CONFLUENCE
+    # ========================
+    location = /confluence { return 301 /confluence/; }
+
     location ^~ /confluence/ {
+      # Confluence zwykle ma path=/confluence → wysyłamy /confluence/... do backendu
       proxy_pass http://confluence_upstream;
+
       proxy_http_version 1.1;
       proxy_read_timeout 300;
       proxy_connect_timeout 60;
@@ -355,7 +370,7 @@ http {
       proxy_set_header Upgrade           $http_upgrade;
       proxy_set_header Connection        $connection_upgrade;
 
-      proxy_redirect off;
+      proxy_redirect ~^(/[^/].*)$ /confluence$1;
     }
   }
 }
@@ -377,15 +392,68 @@ nano /opt/atlassian/jira/conf/server.xml
 ```
 
 ```bash
-<Connector port="8080"
-           protocol="org.apache.coyote.http11.Http11NioProtocol"
-           proxyName="192.168.10.57"
-           proxyPort="443"
-           scheme="https"
-           secure="true"
-           URIEncoding="UTF-8" />
 
-<Context path="/jira" docBase="${catalina.home}/atlassian-jira" reloadable="false" useHttpOnly="true"/>
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Apache License, Version 2.0
+-->
+<Server port="8005" shutdown="SHUTDOWN">
+    <Listener className="org.apache.catalina.startup.VersionLoggerListener"/>
+    <Listener className="org.apache.catalina.core.AprLifecycleListener" SSLEngine="on"/>
+    <Listener className="org.apache.catalina.core.JreMemoryLeakPreventionListener"/>
+    <Listener className="org.apache.catalina.mbeans.GlobalResourcesLifecycleListener"/>
+    <Listener className="org.apache.catalina.core.ThreadLocalLeakPreventionListener"/>
+
+    <Service name="Catalina">
+        <!-- ===========================================================================================================
+             DEFAULT connector (no proxy) — DISABLED
+             =========================================================================================================== -->
+        <!--
+        <Connector port="8080" relaxedPathChars="[]|" relaxedQueryChars="[]|{}^&#x5c;&#x60;&quot;&lt;&gt;"
+                   maxThreads="150" minSpareThreads="25" connectionTimeout="20000" enableLookups="false"
+                   maxHttpHeaderSize="8192" protocol="HTTP/1.1" useBodyEncodingForURI="true" redirectPort="8443"
+                   acceptCount="100" disableUploadTimeout="true" bindOnInit="false"/>
+        -->
+
+        <!-- ===========================================================================================================
+             HTTPS - Proxying Jira via Nginx/Apache over HTTPS — ENABLED
+             =========================================================================================================== -->
+        <Connector port="8080"
+                   relaxedPathChars="[]|" relaxedQueryChars="[]|{}^&#x5c;&#x60;&quot;&lt;&gt;"
+                   maxThreads="150" minSpareThreads="25" connectionTimeout="20000" enableLookups="false"
+                   maxHttpHeaderSize="8192" protocol="HTTP/1.1" useBodyEncodingForURI="true" redirectPort="8443"
+                   acceptCount="100" disableUploadTimeout="true" bindOnInit="false"
+                   secure="true" scheme="https"
+                   proxyName="192.168.10.57" proxyPort="443"/>
+
+        <!-- ===========================================================================================================
+             AJP connector — DISABLED (niepotrzebny)
+             =========================================================================================================== -->
+        <!--
+        <Connector port="8009" URIEncoding="UTF-8" enableLookups="false" protocol="AJP/1.3"/>
+        -->
+
+        <Engine name="Catalina" defaultHost="localhost">
+            <Host name="localhost" appBase="webapps" unpackWARs="true" autoDeploy="true">
+
+                <!-- Context path ustawiony na /jira -->
+                <Context path="/jira"
+                         docBase="${catalina.home}/atlassian-jira"
+                         reloadable="false" useHttpOnly="true">
+                    <Resource name="UserTransaction" auth="Container" type="javax.transaction.UserTransaction"
+                              factory="org.objectweb.jotm.UserTransactionFactory" jotm.timeout="60"/>
+                    <Manager pathname=""/>
+                    <JarScanner scanManifest="false"/>
+                    <Valve className="org.apache.catalina.valves.StuckThreadDetectionValve" threshold="120"/>
+                </Context>
+
+            </Host>
+            <Valve className="org.apache.catalina.valves.AccessLogValve"
+                   pattern="%a %{jira.request.id}r %{jira.request.username}r %t &quot;%m %U%{sanitized.query}r %H&quot; %s %b %D &quot;%{sanitized.referer}r&quot; &quot;%{User-Agent}i&quot; &quot;%{jira.request.assession.id}r&quot;"/>
+        </Engine>
+    </Service>
+</Server>
+
 ```
 
 ## Confluence
@@ -415,3 +483,20 @@ sudo service confluence stop && sudo service confluence start
 <img width="1150" height="431" alt="image" src="https://github.com/user-attachments/assets/69cf9db8-b271-4541-98c5-195ff22b1d3f" />
 
 <img width="1379" height="363" alt="image" src="https://github.com/user-attachments/assets/3cfc17a4-4f79-4ea9-b37c-f465165f8d2d" />
+
+
+# Integration
+<img width="462" height="113" alt="image" src="https://github.com/user-attachments/assets/2c3672d7-abe3-423e-a65b-a17773113e47" />
+### Next, select the option to configure Jira with Confluence. Click the hyperlink and enter the administrator password.
+<img width="539" height="295" alt="image" src="https://github.com/user-attachments/assets/a6e6727b-4e0d-45a8-afb5-64a34dc51e63" />
+
+### Create links
+<img width="980" height="257" alt="image" src="https://github.com/user-attachments/assets/ca9377ef-bb19-49b7-bc3c-1db9291a8e50" />
+
+<img width="546" height="464" alt="image" src="https://github.com/user-attachments/assets/e5de22b6-3ebc-49f0-909e-d2c92166e9ee" />
+
+<img width="394" height="527" alt="image" src="https://github.com/user-attachments/assets/f454eb1b-88b4-4e2d-8222-87600bd1035e" />
+
+### Connecting
+<img width="980" height="131" alt="image" src="https://github.com/user-attachments/assets/9c0bf886-41c6-4d54-89b4-13b7398269b2" />
+<img width="980" height="125" alt="image" src="https://github.com/user-attachments/assets/03e1794f-6dbc-4d00-99bb-85149ba3dbd8" />
