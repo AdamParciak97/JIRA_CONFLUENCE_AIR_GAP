@@ -488,6 +488,7 @@ sudo service confluence stop && sudo service confluence start
 # Integration
 <img width="462" height="113" alt="image" src="https://github.com/user-attachments/assets/2c3672d7-abe3-423e-a65b-a17773113e47" />
 ### Next, select the option to configure Jira with Confluence. Click the hyperlink and enter the administrator password.
+
 <img width="539" height="295" alt="image" src="https://github.com/user-attachments/assets/a6e6727b-4e0d-45a8-afb5-64a34dc51e63" />
 
 ### Create links
