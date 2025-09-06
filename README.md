@@ -536,6 +536,13 @@ sudo service confluence stop && sudo service confluence start
 <img width="1379" height="363" alt="image" src="https://github.com/user-attachments/assets/3cfc17a4-4f79-4ea9-b37c-f465165f8d2d" />
 
 
+# Test for https. Logon to links 
+```bash
+https://192.168.10.57/jira
+https://192.168.10.57/confluence
+```
+
+
 # Integration
 <img width="462" height="113" alt="image" src="https://github.com/user-attachments/assets/2c3672d7-abe3-423e-a65b-a17773113e47" />
 
