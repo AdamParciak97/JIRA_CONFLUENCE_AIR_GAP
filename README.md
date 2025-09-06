@@ -1,5 +1,7 @@
 # JIRA and CONFLUENCE on AIR-GAP
 
+<img width="1080" height="340" alt="image" src="https://github.com/user-attachments/assets/d4050e6e-2602-4441-82f1-1cab9e4e2425" />
+
 ## Architecture:
 
 | Machine | Jira | Confluence | Postgres | PROXY|
