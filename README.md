@@ -556,6 +556,32 @@ https://192.168.10.57/confluence
 
 <img width="394" height="527" alt="image" src="https://github.com/user-attachments/assets/f454eb1b-88b4-4e2d-8222-87600bd1035e" />
 
+### Copy Ca.crt to server Jira and Confluence (SCP or WinSCP). Next step import CRT to keystore.
+```bash
+sudo /opt/atlassian/jira/jre/bin/keytool -importcert \
+ -keystore /opt/atlassian/jira/jre/lib/security/cacerts \
+ -storepass changeit \
+ -alias my-root-ca \
+ -file /home/super_admin/labCA.crt \
+ -noprompt
+
+sudo /opt/atlassian/confluence/jre/bin/keytool -importcert \
+ -keystore /opt/atlassian/confluence/jre/lib/security/cacerts \
+ -storepass changeit \
+ -alias my-root-ca \
+ -file /home/super_admin/labCA.crt \
+ -noprompt
+```
+
+### Restart Jira and Confluence
+```bash
+/opt/atlassian/jira/bin/stop-jira.sh
+/opt/atlassian/jira/bin/start-jira.sh
+
+/opt/atlassian/confluence/bin/stop-jira.sh
+/opt/atlassian/confluence/bin/start-jira.sh
+```
+
 ### Connecting
 <img width="980" height="131" alt="image" src="https://github.com/user-attachments/assets/9c0bf886-41c6-4d54-89b4-13b7398269b2" />
 <img width="980" height="125" alt="image" src="https://github.com/user-attachments/assets/03e1794f-6dbc-4d00-99bb-85149ba3dbd8" />
