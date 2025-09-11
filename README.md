@@ -585,3 +585,97 @@ sudo /opt/atlassian/confluence/jre/bin/keytool -importcert \
 ### Connecting
 <img width="980" height="131" alt="image" src="https://github.com/user-attachments/assets/9c0bf886-41c6-4d54-89b4-13b7398269b2" />
 <img width="980" height="125" alt="image" src="https://github.com/user-attachments/assets/03e1794f-6dbc-4d00-99bb-85149ba3dbd8" />
+
+## Local PKI certs and change IP-ADDRESS on FQDN
+
+### Change on file nginx.conf on Proxy machine server_name end directory to certs 
+```bash
+user  nginx;
+worker_processes auto;
+
+events { worker_connections 4096; }
+
+http {
+  include       /etc/nginx/mime.types;
+  default_type  application/octet-stream;
+
+  log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                  '$status $body_bytes_sent "$http_referer" '
+                  '"$http_user_agent" "$http_x_forwarded_for"';
+  access_log /var/log/nginx/access.log main;
+  error_log  /var/log/nginx/error.log warn;
+
+  map $http_upgrade $connection_upgrade { default upgrade; '' close; }
+
+  upstream jira_upstream { server 192.168.10.180:8080; keepalive 64; }
+  upstream confluence_upstream { server 192.168.10.181:8090; keepalive 64; }
+
+  # HTTP -> HTTPS
+  server {
+    listen 80;
+    server_name automation.test.pl;  # <— FQDN
+    return 301 https://$host$request_uri;
+  }
+
+  # HTTPS
+  server {
+    listen 443 ssl http2;
+    server_name automation.test.pl;  # <— FQDN
+
+    ssl_certificate     /etc/nginx/certs/fullchain.crt;   # server + sub-CA
+    ssl_certificate_key /etc/nginx/certs/automation.key;  # server key
+    ssl_trusted_certificate /etc/nginx/certs/ca-chain.crt;# sub-CA + root
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    client_max_body_size 200m;
+
+    # (optional) HSTS:
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    location = / { return 301 /jira/; }
+    location = /login.jsp { rewrite ^ /jira/login.jsp last; }
+
+    # JIRA
+    location = /jira { return 301 /jira/; }
+    location ^~ /jira/ {
+      proxy_pass http://jira_upstream;
+      proxy_http_version 1.1;
+      proxy_read_timeout 300;
+      proxy_connect_timeout 60;
+      proxy_send_timeout 60;
+
+      proxy_set_header Host              $host;
+      proxy_set_header X-Real-IP         $remote_addr;
+      proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Host  $host;
+      proxy_set_header X-Forwarded-Port  443;
+      proxy_set_header X-Forwarded-Proto https;
+
+      proxy_redirect off;
+    }
+
+    # CONFLUENCE
+    location = /confluence { return 301 /confluence/; }
+    location ^~ /confluence/ {
+      proxy_pass http://confluence_upstream;
+      proxy_http_version 1.1;
+      proxy_read_timeout 300;
+      proxy_connect_timeout 60;
+      proxy_send_timeout 60;
+
+      proxy_set_header Host              $host;
+      proxy_set_header X-Real-IP         $remote_addr;
+      proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Host  $host;
+      proxy_set_header X-Forwarded-Port  443;
+      proxy_set_header X-Forwarded-Proto https;
+
+      proxy_set_header Upgrade           $http_upgrade;
+      proxy_set_header Connection        $connection_upgrade;
+
+      proxy_redirect off;
+    }
+  }
+}
+```
